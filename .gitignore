@@ -1,0 +1,60 @@
+# Build directories
+build/
+cmake-build-*/
+*.dSYM/
+
+# Compiled Object files
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+
+# Executables
+hybrid-transpiler
+test_transpiler
+*.exe
+*.out
+*.app
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Generated files
+*.rs
+*.go
+!examples/*.rs
+!examples/*.go
+
+# Documentation build
+docs/html/
+docs/latex/
+docs/doxygen_sqlite3.db
+
+# Test outputs
+Testing/
+test_output/
+
+# Package managers
+conan/
+vcpkg/
+
+# Temporary files
+*.tmp
+*.bak
+*.log
