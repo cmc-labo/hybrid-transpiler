@@ -23,7 +23,18 @@ enum class TypeKind {
     Class,
     Enum,
     Function,
-    Template
+    Template,
+    // STL Container types
+    StdVector,
+    StdList,
+    StdDeque,
+    StdMap,
+    StdUnorderedMap,
+    StdSet,
+    StdUnorderedSet,
+    StdString,
+    StdPair,
+    StdOptional
 };
 
 /**

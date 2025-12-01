@@ -246,6 +246,49 @@ std::string GoCodeGenerator::convertType(const std::shared_ptr<Type>& type) {
         case TypeKind::Array:
             return "[]" + convertType(type->element_type);
 
+        // STL Container types
+        case TypeKind::StdVector:
+        case TypeKind::StdList:
+        case TypeKind::StdDeque:
+            if (!type->template_args.empty()) {
+                return "[]" + convertType(type->template_args[0]);
+            }
+            return "[]interface{}";
+
+        case TypeKind::StdMap:
+        case TypeKind::StdUnorderedMap:
+            if (type->template_args.size() >= 2) {
+                return "map[" + convertType(type->template_args[0]) + "]" +
+                       convertType(type->template_args[1]);
+            }
+            return "map[interface{}]interface{}";
+
+        case TypeKind::StdSet:
+        case TypeKind::StdUnorderedSet:
+            // Go doesn't have built-in set, use map[T]bool
+            if (!type->template_args.empty()) {
+                return "map[" + convertType(type->template_args[0]) + "]bool";
+            }
+            return "map[interface{}]bool";
+
+        case TypeKind::StdString:
+            return "string";
+
+        case TypeKind::StdPair:
+            // Go doesn't have tuples, use anonymous struct
+            if (type->template_args.size() >= 2) {
+                return "struct { First " + convertType(type->template_args[0]) +
+                       "; Second " + convertType(type->template_args[1]) + " }";
+            }
+            return "struct { First interface{}; Second interface{} }";
+
+        case TypeKind::StdOptional:
+            // Go uses pointer for optional
+            if (!type->template_args.empty()) {
+                return "*" + convertType(type->template_args[0]);
+            }
+            return "*interface{}";
+
         case TypeKind::Struct:
         case TypeKind::Class:
             return capitalize(sanitizeName(type->name));

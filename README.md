@@ -205,9 +205,25 @@ func NewResource(size int) *Resource {
 | Smart Pointers | Box/Rc/Arc | GC pointers | ✅ Supported |
 | Exceptions | Result/panic | error values | ✅ Supported |
 | RAII | Drop trait | defer | ✅ Supported |
+| **STL Containers** | **std::collections** | **slices/maps** | **✅ Supported** |
 | Operator Overload | Traits | N/A | ⚠️ Partial |
 | Multiple Inheritance | Trait composition | N/A | ⚠️ Partial |
 | Virtual Functions | dyn Trait | Interfaces | ✅ Supported |
+
+### STL Container Conversion Table
+
+| C++ STL Container | Rust Equivalent | Go Equivalent | Notes |
+|------------------|-----------------|---------------|-------|
+| `std::vector<T>` | `Vec<T>` | `[]T` | Dynamic array |
+| `std::list<T>` | `LinkedList<T>` | `[]T` | Linked list → slice in Go |
+| `std::deque<T>` | `VecDeque<T>` | `[]T` | Double-ended queue |
+| `std::map<K,V>` | `BTreeMap<K,V>` | `map[K]V` | Ordered map |
+| `std::unordered_map<K,V>` | `HashMap<K,V>` | `map[K]V` | Hash map |
+| `std::set<T>` | `BTreeSet<T>` | `map[T]bool` | Ordered set |
+| `std::unordered_set<T>` | `HashSet<T>` | `map[T]bool` | Hash set |
+| `std::string` | `String` | `string` | UTF-8 string |
+| `std::pair<T,U>` | `(T, U)` | `struct{First T; Second U}` | Tuple/pair |
+| `std::optional<T>` | `Option<T>` | `*T` | Optional value |
 
 ## Project Structure
 
@@ -216,22 +232,26 @@ hybrid-transpiler/
 ├── src/
 │   ├── parser/           # C++ parser (Clang-based)
 │   │   ├── ast_builder.cpp
-│   │   └── type_resolver.cpp
+│   │   ├── type_resolver.cpp
+│   │   └── stl_container_mapper.cpp  # NEW: STL detection
 │   ├── ir/               # Intermediate representation
 │   │   ├── ir_builder.cpp
 │   │   ├── type_system.cpp
 │   │   └── ownership_analyzer.cpp
 │   ├── codegen/
 │   │   ├── rust/         # Rust code generator
-│   │   │   ├── rust_codegen.cpp
+│   │   │   ├── rust_codegen.cpp      # Updated: STL support
 │   │   │   └── rust_formatter.cpp
 │   │   └── go/           # Go code generator
-│   │       ├── go_codegen.cpp
+│   │       ├── go_codegen.cpp        # Updated: STL support
 │   │       └── go_formatter.cpp
 │   └── main.cpp
-├── include/              # Public headers
+├── include/              # Public headers (updated with STL types)
 ├── tests/                # Test cases
 ├── examples/             # Example transformations
+│   ├── stl_containers.cpp            # NEW: STL examples
+│   ├── stl_containers_expected.rs    # NEW: Expected Rust output
+│   └── stl_containers_expected.go    # NEW: Expected Go output
 ├── docs/                 # Documentation
 ├── CMakeLists.txt
 └── README.md
@@ -285,11 +305,12 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
 - [x] Basic class structure conversion
 - [x] Smart pointer transformation
 - [x] Type system mapping
+- [x] **STL container conversion** - ✅ Implemented!
 
 ### v0.2 (Planned)
 - [ ] Full template support
-- [ ] Optimized STL container conversion
 - [ ] Advanced ownership analysis
+- [ ] Exception to Result/error conversion
 
 ### v0.3 (Planned)
 - [ ] Multi-threaded code conversion

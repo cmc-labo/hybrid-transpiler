@@ -191,6 +191,69 @@ std::string RustCodeGenerator::convertType(const std::shared_ptr<Type>& type) {
             return "[" + convertType(type->element_type) + "; " +
                    std::to_string(type->size_bytes / type->element_type->size_bytes) + "]";
 
+        // STL Container types
+        case TypeKind::StdVector:
+            if (!type->template_args.empty()) {
+                return "Vec<" + convertType(type->template_args[0]) + ">";
+            }
+            return "Vec<()>";
+
+        case TypeKind::StdList:
+            if (!type->template_args.empty()) {
+                return "std::collections::LinkedList<" + convertType(type->template_args[0]) + ">";
+            }
+            return "std::collections::LinkedList<()>";
+
+        case TypeKind::StdDeque:
+            if (!type->template_args.empty()) {
+                return "std::collections::VecDeque<" + convertType(type->template_args[0]) + ">";
+            }
+            return "std::collections::VecDeque<()>";
+
+        case TypeKind::StdMap:
+            if (type->template_args.size() >= 2) {
+                return "std::collections::BTreeMap<" +
+                       convertType(type->template_args[0]) + ", " +
+                       convertType(type->template_args[1]) + ">";
+            }
+            return "std::collections::BTreeMap<(), ()>";
+
+        case TypeKind::StdUnorderedMap:
+            if (type->template_args.size() >= 2) {
+                return "std::collections::HashMap<" +
+                       convertType(type->template_args[0]) + ", " +
+                       convertType(type->template_args[1]) + ">";
+            }
+            return "std::collections::HashMap<(), ()>";
+
+        case TypeKind::StdSet:
+            if (!type->template_args.empty()) {
+                return "std::collections::BTreeSet<" + convertType(type->template_args[0]) + ">";
+            }
+            return "std::collections::BTreeSet<()>";
+
+        case TypeKind::StdUnorderedSet:
+            if (!type->template_args.empty()) {
+                return "std::collections::HashSet<" + convertType(type->template_args[0]) + ">";
+            }
+            return "std::collections::HashSet<()>";
+
+        case TypeKind::StdString:
+            return "String";
+
+        case TypeKind::StdPair:
+            if (type->template_args.size() >= 2) {
+                return "(" + convertType(type->template_args[0]) + ", " +
+                       convertType(type->template_args[1]) + ")";
+            }
+            return "((), ())";
+
+        case TypeKind::StdOptional:
+            if (!type->template_args.empty()) {
+                return "Option<" + convertType(type->template_args[0]) + ">";
+            }
+            return "Option<()>";
+
         case TypeKind::Struct:
         case TypeKind::Class:
             return sanitizeName(type->name);
