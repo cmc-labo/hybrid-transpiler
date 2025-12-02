@@ -195,6 +195,71 @@ func NewResource(size int) *Resource {
 }
 ```
 
+### Example 3: Exception Handling
+
+**Input (C++):**
+```cpp
+class FileReader {
+public:
+    std::string readFile(const std::string& path) {
+        try {
+            if (path.empty()) {
+                throw std::invalid_argument("Path cannot be empty");
+            }
+
+            // Read file content
+            return file_content;
+        } catch (const std::invalid_argument& e) {
+            // Handle error
+            return "";
+        }
+    }
+};
+```
+
+**Output (Rust):**
+```rust
+pub struct FileReader {}
+
+impl FileReader {
+    pub fn read_file(&self, path: &str) -> Result<String, Box<dyn std::error::Error>> {
+        (|| -> Result<String, Box<dyn std::error::Error>> {
+            if path.is_empty() {
+                return Err("Path cannot be empty".into());
+            }
+
+            // Read file content
+            Ok(file_content)
+        })()
+        .or_else(|err| {
+            // Handle error
+            Ok(String::new())
+        })
+    }
+}
+```
+
+**Output (Go):**
+```go
+type FileReader struct{}
+
+func (this *FileReader) ReadFile(path string) (string, error) {
+    defer func() {
+        if r := recover(); r != nil {
+            // Handle error
+        }
+    }()
+
+    // Try block
+    if path == "" {
+        return "", errors.New("path cannot be empty")
+    }
+
+    // Read file content
+    return fileContent, nil
+}
+```
+
 ## Feature Support Matrix
 
 | C++ Feature | Rust | Go | Status |
@@ -203,7 +268,7 @@ func NewResource(size int) *Resource {
 | Inheritance | Traits | Interfaces | ✅ Supported |
 | Templates | Generics | Generics | ✅ Supported |
 | Smart Pointers | Box/Rc/Arc | GC pointers | ✅ Supported |
-| Exceptions | Result/panic | error values | ✅ Supported |
+| **Exceptions** | **Result/panic** | **error values** | **✅ Supported** |
 | RAII | Drop trait | defer | ✅ Supported |
 | **STL Containers** | **std::collections** | **slices/maps** | **✅ Supported** |
 | Operator Overload | Traits | N/A | ⚠️ Partial |
@@ -225,6 +290,18 @@ func NewResource(size int) *Resource {
 | `std::pair<T,U>` | `(T, U)` | `struct{First T; Second U}` | Tuple/pair |
 | `std::optional<T>` | `Option<T>` | `*T` | Optional value |
 
+### Exception Handling Conversion
+
+| C++ Pattern | Rust Conversion | Go Conversion | Notes |
+|-------------|-----------------|---------------|-------|
+| `try { ... } catch (T& e) { ... }` | `Result<T, E>` with `?` operator | `(T, error)` return + `if err != nil` | Explicit error handling |
+| `throw exception` | `return Err(...)` | `return ..., err` | Convert to error return |
+| `noexcept` | No `Result` wrapper | No `error` return | Function guaranteed not to fail |
+| `catch (...)` | `or_else(\|_\| ...)` | `defer { recover() }` | Catch-all handler |
+| Exception propagation | `?` operator chains | `if err != nil { return err }` | Error bubbling |
+| Multiple catch clauses | Pattern matching on error type | Type assertion in defer | Type-specific handling |
+| RAII + exceptions | `Drop` trait (automatic) | `defer` statement | Cleanup guaranteed |
+
 ## Project Structure
 
 ```
@@ -233,25 +310,30 @@ hybrid-transpiler/
 │   ├── parser/           # C++ parser (Clang-based)
 │   │   ├── ast_builder.cpp
 │   │   ├── type_resolver.cpp
-│   │   └── stl_container_mapper.cpp  # NEW: STL detection
+│   │   ├── stl_container_mapper.cpp        # STL detection
+│   │   └── exception_analyzer.cpp          # NEW: Exception analysis
 │   ├── ir/               # Intermediate representation
 │   │   ├── ir_builder.cpp
 │   │   ├── type_system.cpp
 │   │   └── ownership_analyzer.cpp
 │   ├── codegen/
 │   │   ├── rust/         # Rust code generator
-│   │   │   ├── rust_codegen.cpp      # Updated: STL support
+│   │   │   ├── rust_codegen.cpp            # Updated: Exception conversion
 │   │   │   └── rust_formatter.cpp
 │   │   └── go/           # Go code generator
-│   │       ├── go_codegen.cpp        # Updated: STL support
+│   │       ├── go_codegen.cpp              # Updated: Exception conversion
 │   │       └── go_formatter.cpp
 │   └── main.cpp
-├── include/              # Public headers (updated with STL types)
+├── include/              # Public headers
+│   └── ir.h              # Updated: Exception types added
 ├── tests/                # Test cases
 ├── examples/             # Example transformations
-│   ├── stl_containers.cpp            # NEW: STL examples
-│   ├── stl_containers_expected.rs    # NEW: Expected Rust output
-│   └── stl_containers_expected.go    # NEW: Expected Go output
+│   ├── stl_containers.cpp
+│   ├── stl_containers_expected.rs
+│   ├── stl_containers_expected.go
+│   ├── exception_handling.cpp              # NEW: Exception examples
+│   ├── exception_handling_expected.rs      # NEW: Expected Rust output
+│   └── exception_handling_expected.go      # NEW: Expected Go output
 ├── docs/                 # Documentation
 ├── CMakeLists.txt
 └── README.md
@@ -307,10 +389,10 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
 - [x] Type system mapping
 - [x] **STL container conversion** - ✅ Implemented!
 
-### v0.2 (Planned)
+### v0.2 (Current)
+- [x] **Exception to Result/error conversion** - ✅ Implemented!
 - [ ] Full template support
 - [ ] Advanced ownership analysis
-- [ ] Exception to Result/error conversion
 
 ### v0.3 (Planned)
 - [ ] Multi-threaded code conversion

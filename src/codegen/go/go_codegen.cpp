@@ -163,24 +163,95 @@ void GoCodeGenerator::generateFunction(const Function& func, const std::string& 
 
     sig << ")";
 
-    // Return type
-    if (func.return_type->kind != TypeKind::Void) {
+    // Return type - add error if function may throw
+    if (func.may_throw) {
+        // Function may throw - convert to multiple return values
+        if (func.return_type->kind != TypeKind::Void) {
+            sig << " (" << convertType(func.return_type) << ", error)";
+        } else {
+            sig << " error";
+        }
+    } else if (func.return_type->kind != TypeKind::Void) {
         sig << " " << convertType(func.return_type);
     }
 
     writeLine(sig.str() + " {");
     indent();
 
-    // Function body (simplified)
-    if (!func.body.empty()) {
+    // Function body with exception handling conversion
+    if (!func.try_catch_blocks.empty()) {
+        // Convert try-catch blocks to Go error handling
+        generateTryCatchAsError(func);
+    } else if (!func.body.empty()) {
+        // Regular function body
+        if (func.may_throw) {
+            writeLine("// Function may throw - return error on failure");
+        }
         writeLine("// TODO: Implement function body");
         writeLine(func.body);
+
+        if (func.may_throw && func.return_type->kind != TypeKind::Void) {
+            writeLine("// return result, nil");
+        } else if (func.may_throw) {
+            writeLine("return nil");
+        }
     } else {
-        writeLine("panic(\"not implemented\")");
+        if (func.may_throw) {
+            writeLine("return nil");
+        } else {
+            writeLine("panic(\"not implemented\")");
+        }
     }
 
     dedent();
     writeLine("}");
+}
+
+void GoCodeGenerator::generateTryCatchAsError(const Function& func) {
+    // Convert C++ try-catch to Go error handling with defer/recover
+    writeLine("// Converted from C++ try-catch block");
+
+    for (const auto& block : func.try_catch_blocks) {
+        // Use defer/recover for exception handling
+        if (!block.catch_clauses.empty()) {
+            writeLine("defer func() {");
+            indent();
+            writeLine("if r := recover(); r != nil {");
+            indent();
+
+            for (const auto& catch_clause : block.catch_clauses) {
+                writeLine("// Catch " + catch_clause.exception_type);
+
+                if (catch_clause.exception_type == "...") {
+                    writeLine("// Catch-all handler");
+                } else {
+                    writeLine("// Handle specific exception type: " + catch_clause.exception_type);
+                }
+
+                if (!catch_clause.handler_body.empty()) {
+                    writeLine(catch_clause.handler_body);
+                }
+            }
+
+            dedent();
+            writeLine("}");
+            dedent();
+            writeLine("}()");
+            writeLine("");
+        }
+
+        // Generate try block body
+        writeLine("// Try block:");
+        if (!block.try_body.empty()) {
+            writeLine(block.try_body);
+        }
+
+        if (func.may_throw && func.return_type->kind != TypeKind::Void) {
+            writeLine("// return result, nil");
+        } else if (func.may_throw) {
+            writeLine("// return nil");
+        }
+    }
 }
 
 void GoCodeGenerator::generateVariable(const Variable& var) {

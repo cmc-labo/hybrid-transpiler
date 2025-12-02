@@ -109,9 +109,17 @@ void RustCodeGenerator::generateFunction(const Function& func) {
 
     sig << ")";
 
-    // Return type
+    // Return type - wrap in Result if function may throw
     if (func.is_constructor) {
         sig << " -> Self";
+    } else if (func.may_throw) {
+        // Function may throw - convert to Result type
+        if (func.return_type->kind != TypeKind::Void) {
+            sig << " -> Result<" << convertType(func.return_type)
+                << ", Box<dyn std::error::Error>>";
+        } else {
+            sig << " -> Result<(), Box<dyn std::error::Error>>";
+        }
     } else if (func.return_type->kind != TypeKind::Void) {
         sig << " -> " << convertType(func.return_type);
     }
@@ -119,16 +127,89 @@ void RustCodeGenerator::generateFunction(const Function& func) {
     writeLine(sig.str() + " {");
     indent();
 
-    // Function body (simplified - would need proper AST traversal)
-    if (!func.body.empty()) {
+    // Function body with exception handling conversion
+    if (!func.try_catch_blocks.empty()) {
+        // Convert try-catch blocks to Result pattern
+        generateTryCatchAsResult(func);
+    } else if (!func.body.empty()) {
+        // Regular function body
+        if (func.may_throw) {
+            writeLine("// Function may throw - wrap result in Ok()");
+        }
         writeLine("// TODO: Implement function body");
         writeLine(func.body);
+
+        if (func.may_throw && func.return_type->kind != TypeKind::Void) {
+            writeLine("// Ok(result)");
+        } else if (func.may_throw) {
+            writeLine("Ok(())");
+        }
     } else {
-        writeLine("todo!()");
+        if (func.may_throw) {
+            writeLine("Ok(())");
+        } else {
+            writeLine("todo!()");
+        }
     }
 
     dedent();
     writeLine("}");
+}
+
+void RustCodeGenerator::generateTryCatchAsResult(const Function& func) {
+    // Convert C++ try-catch to Rust Result pattern
+    writeLine("// Converted from C++ try-catch block");
+
+    for (const auto& block : func.try_catch_blocks) {
+        // Generate the try body as a closure or inline code
+        writeLine("(|| -> Result<_, Box<dyn std::error::Error>> {");
+        indent();
+
+        // Generate try block body
+        writeLine("// Try block:");
+        if (!block.try_body.empty()) {
+            writeLine(block.try_body);
+        }
+
+        // If try succeeds, return Ok
+        if (func.return_type->kind != TypeKind::Void) {
+            writeLine("Ok(result)  // TODO: actual return value");
+        } else {
+            writeLine("Ok(())");
+        }
+
+        dedent();
+        writeLine("})()");
+
+        // Generate match for error handling (equivalent to catch)
+        if (!block.catch_clauses.empty()) {
+            writeLine(".or_else(|err| {");
+            indent();
+
+            for (const auto& catch_clause : block.catch_clauses) {
+                writeLine("// Catch " + catch_clause.exception_type);
+
+                if (catch_clause.exception_type == "...") {
+                    writeLine("// Catch-all handler");
+                } else {
+                    writeLine("// Handle specific exception type: " + catch_clause.exception_type);
+                }
+
+                if (!catch_clause.handler_body.empty()) {
+                    writeLine(catch_clause.handler_body);
+                }
+            }
+
+            if (func.return_type->kind != TypeKind::Void) {
+                writeLine("Ok(default_value)  // TODO: error recovery value");
+            } else {
+                writeLine("Ok(())");
+            }
+
+            dedent();
+            writeLine("})");
+        }
+    }
 }
 
 void RustCodeGenerator::generateVariable(const Variable& var) {

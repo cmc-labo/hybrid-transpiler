@@ -82,6 +82,32 @@ public:
 };
 
 /**
+ * Exception specification
+ */
+class ExceptionSpec {
+public:
+    bool can_throw = false;
+    std::vector<std::string> throw_types;  // Empty means can throw any
+    bool is_noexcept = false;
+};
+
+/**
+ * Try-Catch block representation
+ */
+class TryCatchBlock {
+public:
+    std::string try_body;
+
+    struct CatchClause {
+        std::string exception_type;
+        std::string exception_var;
+        std::string handler_body;
+    };
+
+    std::vector<CatchClause> catch_clauses;
+};
+
+/**
  * Function representation
  */
 class Function {
@@ -101,6 +127,11 @@ public:
     // Ownership analysis results
     std::vector<std::string> moved_params;
     std::vector<std::string> borrowed_params;
+
+    // Exception handling
+    ExceptionSpec exception_spec;
+    std::vector<TryCatchBlock> try_catch_blocks;
+    bool may_throw = false;  // Analysis result: function may throw
 };
 
 /**
