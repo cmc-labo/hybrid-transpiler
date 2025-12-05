@@ -104,25 +104,32 @@
 | `shared_ptr` | ✅ | ✅ | ✅ | Rust: `Rc<T>`, Go: `*T` |
 | Arrays | ✅ | ✅ | ✅ | Rust: arrays/Vec, Go: slices |
 
+### Fully Supported Features
+
+| Feature | Rust | Go | Status |
+|---------|------|-----|--------|
+| **Exception Handling** | ✅ | ✅ | **Fully supported** |
+| **Templates/Generics** | ✅ | ✅ | **Fully supported** |
+| **Multithreading** | ✅ | ✅ | **Fully supported** |
+
 ### Partially Supported Features
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Inheritance | ⚠️ | Base classes noted, traits suggested |
-| Templates | ⚠️ | Basic support, complex cases TBD |
 | Operator Overloading | ⚠️ | Rust: traits, Go: N/A |
-| Exceptions | ⚠️ | Planned: Result/error conversion |
 
 ### Not Yet Supported
 
 | Feature | Reason | Planned |
 |---------|--------|---------|
-| Full Clang Integration | Infrastructure phase | v0.2 |
+| Full Clang Integration | Infrastructure phase | v0.3 |
 | Template Metaprogramming | Complex analysis needed | v0.3 |
 | Macro Expansion | Requires preprocessor | v0.3 |
-| Multiple Inheritance | Complex mapping | v0.2 |
-| Virtual Functions | Needs trait analysis | v0.2 |
+| Multiple Inheritance | Complex mapping | v0.3 |
+| Virtual Functions | Needs trait analysis | v0.3 |
 | Async/Await | Not yet designed | v0.4 |
+| Advanced Data Race Detection | Requires deep flow analysis | v0.4 |
 
 ## Architecture Highlights
 
@@ -202,22 +209,28 @@ make test
 
 ## Development Roadmap
 
-### Version 0.2 (Next Release)
+### Version 0.2 (Current - Completed!)
+- [x] Exception to Result/error conversion - ✅ **Completed**
+- [x] Template/Generic support - ✅ **Completed**
+- [x] Multithreading conversion - ✅ **Completed**
+- [x] STL container optimization - ✅ **Completed**
+
+### Version 0.3 (Next Release)
 - [ ] Full Clang LibTooling integration
 - [ ] Complete AST traversal
 - [ ] Template instantiation
 - [ ] Inheritance mapping (traits/interfaces)
 - [ ] Virtual function support
-- [ ] STL container optimization
-
-### Version 0.3 (Future)
-- [ ] Macro handling
-- [ ] Exception to Result/error conversion
 - [ ] Advanced ownership analysis
 - [ ] Lifetime annotation (Rust)
 - [ ] Multi-file project support
 
-### Version 0.4 (Long-term)
+### Version 0.4 (Future)
+- [ ] Macro handling
+- [ ] Advanced data race detection
+- [ ] Thread safety analysis
+
+### Version 0.5 (Long-term)
 - [ ] Async/await conversion
 - [ ] FFI generation
 - [ ] IDE plugin (VSCode)

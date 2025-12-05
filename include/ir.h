@@ -34,7 +34,17 @@ enum class TypeKind {
     StdUnorderedSet,
     StdString,
     StdPair,
-    StdOptional
+    StdOptional,
+    // Threading types
+    StdThread,
+    StdMutex,
+    StdRecursiveMutex,
+    StdSharedMutex,
+    StdConditionVariable,
+    StdAtomic,
+    StdLockGuard,
+    StdUniqueLock,
+    StdSharedLock
 };
 
 /**
@@ -139,6 +149,73 @@ public:
 };
 
 /**
+ * Thread creation information
+ */
+class ThreadInfo {
+public:
+    std::string thread_var_name;
+    std::string function_name;
+    std::vector<std::string> arguments;
+    bool detached = false;
+    bool joinable = true;
+};
+
+/**
+ * Mutex/Lock information
+ */
+class MutexInfo {
+public:
+    enum MutexType {
+        Mutex,
+        RecursiveMutex,
+        SharedMutex,
+        TimedMutex
+    };
+
+    MutexType type = Mutex;
+    std::string mutex_var_name;
+    std::shared_ptr<Type> protected_type;  // Type being protected by mutex
+};
+
+/**
+ * Lock scope information
+ */
+class LockInfo {
+public:
+    enum LockType {
+        LockGuard,
+        UniqueLock,
+        SharedLock,
+        ScopedLock
+    };
+
+    LockType type = LockGuard;
+    std::string lock_var_name;
+    std::string mutex_name;
+    std::string scope_body;
+};
+
+/**
+ * Atomic operation information
+ */
+class AtomicInfo {
+public:
+    std::string atomic_var_name;
+    std::shared_ptr<Type> value_type;
+    std::vector<std::string> operations;  // load, store, fetch_add, etc.
+};
+
+/**
+ * Condition variable information
+ */
+class ConditionVariableInfo {
+public:
+    std::string cv_var_name;
+    std::string associated_mutex;
+    std::vector<std::string> wait_conditions;
+};
+
+/**
  * Function representation
  */
 class Function {
@@ -168,6 +245,13 @@ public:
     bool is_template = false;
     std::vector<TemplateParameter> template_parameters;
     TemplateSpecialization specialization;
+
+    // Threading information
+    std::vector<ThreadInfo> threads_created;
+    std::vector<LockInfo> lock_scopes;
+    std::vector<AtomicInfo> atomic_operations;
+    std::vector<ConditionVariableInfo> condition_variables;
+    bool uses_threading = false;
 };
 
 /**
@@ -194,6 +278,11 @@ public:
         std::vector<std::string> members;
     };
     std::vector<AccessSection> access_sections;
+
+    // Threading information
+    std::vector<MutexInfo> mutexes;
+    std::vector<AtomicInfo> atomic_fields;
+    bool thread_safe = false;
 };
 
 /**

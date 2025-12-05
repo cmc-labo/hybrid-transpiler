@@ -178,8 +178,12 @@ void GoCodeGenerator::generateFunction(const Function& func, const std::string& 
     writeLine(sig.str() + " {");
     indent();
 
+    // Function body with threading conversion
+    if (func.uses_threading) {
+        generateThreadingCode(func);
+    }
     // Function body with exception handling conversion
-    if (!func.try_catch_blocks.empty()) {
+    else if (!func.try_catch_blocks.empty()) {
         // Convert try-catch blocks to Go error handling
         generateTryCatchAsError(func);
     } else if (!func.body.empty()) {
@@ -360,6 +364,36 @@ std::string GoCodeGenerator::convertType(const std::shared_ptr<Type>& type) {
             }
             return "*interface{}";
 
+        // Threading types
+        case TypeKind::StdThread:
+            return "/* goroutine (no type representation) */";
+
+        case TypeKind::StdMutex:
+        case TypeKind::StdRecursiveMutex:
+            return "sync.Mutex";
+
+        case TypeKind::StdSharedMutex:
+            return "sync.RWMutex";
+
+        case TypeKind::StdConditionVariable:
+            return "sync.Cond";
+
+        case TypeKind::StdAtomic:
+            if (!type->template_args.empty()) {
+                std::string inner_type = type->template_args[0]->name;
+                if (inner_type == "int" || inner_type == "int32_t") return "atomic.Int32";
+                if (inner_type == "long" || inner_type == "int64_t") return "atomic.Int64";
+                if (inner_type == "unsigned int" || inner_type == "uint32_t") return "atomic.Uint32";
+                if (inner_type == "unsigned long" || inner_type == "uint64_t") return "atomic.Uint64";
+                if (inner_type == "bool") return "atomic.Bool";
+            }
+            return "atomic.Value";
+
+        case TypeKind::StdLockGuard:
+        case TypeKind::StdUniqueLock:
+        case TypeKind::StdSharedLock:
+            return "/* defer unlock pattern */";
+
         case TypeKind::Struct:
         case TypeKind::Class:
             return capitalize(sanitizeName(type->name));
@@ -393,6 +427,239 @@ std::string GoCodeGenerator::capitalize(const std::string& name) {
     std::string result = name;
     result[0] = std::toupper(result[0]);
     return result;
+}
+
+void GoCodeGenerator::generateThreadingCode(const Function& func) {
+    writeLine("// Threading code converted from C++");
+    writeLine("");
+
+    // If threads are created, we need sync.WaitGroup
+    if (!func.threads_created.empty()) {
+        writeLine("var wg sync.WaitGroup");
+        writeLine("");
+    }
+
+    // Generate goroutine creation
+    for (const auto& thread : func.threads_created) {
+        generateGoroutineCreation(thread);
+        writeLine("");
+    }
+
+    // Generate mutex locks
+    for (const auto& lock : func.lock_scopes) {
+        generateMutexLock(lock);
+        writeLine("");
+    }
+
+    // Generate atomic operations
+    for (const auto& atomic : func.atomic_operations) {
+        generateAtomicOperations(atomic);
+        writeLine("");
+    }
+
+    // Generate condition variable operations
+    for (const auto& cv : func.condition_variables) {
+        generateConditionVariable(cv);
+        writeLine("");
+    }
+
+    // Generate original function body
+    if (!func.body.empty()) {
+        writeLine("// Original function body:");
+        writeLine(func.body);
+    }
+
+    // Wait for all goroutines if they are joinable
+    bool has_joinable_threads = false;
+    for (const auto& thread : func.threads_created) {
+        if (thread.joinable && !thread.detached) {
+            has_joinable_threads = true;
+            break;
+        }
+    }
+
+    if (has_joinable_threads) {
+        writeLine("");
+        writeLine("// Wait for all goroutines to complete");
+        writeLine("wg.Wait()");
+    }
+}
+
+void GoCodeGenerator::generateGoroutineCreation(const ThreadInfo& thread) {
+    std::stringstream ss;
+
+    writeLine("// Goroutine: " + thread.thread_var_name);
+
+    if (thread.joinable && !thread.detached) {
+        writeLine("wg.Add(1)");
+    }
+
+    // Generate goroutine launch
+    writeLine("go func() {");
+    indent();
+
+    if (thread.joinable && !thread.detached) {
+        writeLine("defer wg.Done()");
+    }
+
+    // Call the thread function with arguments
+    ss << capitalize(sanitizeName(thread.function_name)) << "(";
+
+    for (size_t i = 0; i < thread.arguments.size(); ++i) {
+        ss << thread.arguments[i];
+        if (i < thread.arguments.size() - 1) {
+            ss << ", ";
+        }
+    }
+
+    ss << ")";
+    writeLine(ss.str());
+
+    dedent();
+    writeLine("}()");
+
+    if (thread.detached) {
+        writeLine("// Note: Original thread was detached (goroutine runs independently)");
+    }
+}
+
+void GoCodeGenerator::generateMutexLock(const LockInfo& lock) {
+    std::stringstream ss;
+
+    switch (lock.type) {
+        case LockInfo::LockGuard:
+        case LockInfo::UniqueLock:
+            writeLine("// Mutex lock with defer unlock (RAII pattern)");
+            ss << sanitizeName(lock.mutex_name) << ".Lock()";
+            writeLine(ss.str());
+            ss.str("");
+            ss << "defer " << sanitizeName(lock.mutex_name) << ".Unlock()";
+            writeLine(ss.str());
+            break;
+
+        case LockInfo::SharedLock:
+            writeLine("// Read lock with defer unlock");
+            ss << sanitizeName(lock.mutex_name) << ".RLock()";
+            writeLine(ss.str());
+            ss.str("");
+            ss << "defer " << sanitizeName(lock.mutex_name) << ".RUnlock()";
+            writeLine(ss.str());
+            break;
+
+        default:
+            writeLine("// Unknown lock type");
+            break;
+    }
+
+    // Generate lock scope body if present
+    if (!lock.scope_body.empty()) {
+        writeLine("");
+        writeLine("// Critical section:");
+        writeLine("{");
+        indent();
+        writeLine(lock.scope_body);
+        dedent();
+        writeLine("}");
+        writeLine("// Mutex automatically unlocked via defer");
+    }
+}
+
+void GoCodeGenerator::generateAtomicOperations(const AtomicInfo& atomic) {
+    std::stringstream ss;
+
+    writeLine("// Atomic variable: " + atomic.atomic_var_name);
+
+    // Generate atomic variable if we have type info
+    if (atomic.value_type) {
+        std::string atomic_type;
+        if (atomic.value_type->name == "int" || atomic.value_type->name == "int32_t") {
+            atomic_type = "atomic.Int32";
+        } else if (atomic.value_type->name == "long" || atomic.value_type->name == "int64_t") {
+            atomic_type = "atomic.Int64";
+        } else if (atomic.value_type->name == "bool") {
+            atomic_type = "atomic.Bool";
+        } else if (atomic.value_type->name == "unsigned int" || atomic.value_type->name == "uint32_t") {
+            atomic_type = "atomic.Uint32";
+        } else if (atomic.value_type->name == "unsigned long" || atomic.value_type->name == "uint64_t") {
+            atomic_type = "atomic.Uint64";
+        } else {
+            atomic_type = "atomic.Value";
+        }
+
+        ss << "var " << sanitizeName(atomic.atomic_var_name) << " " << atomic_type;
+        writeLine(ss.str());
+    }
+
+    // Generate atomic operations
+    for (const auto& op : atomic.operations) {
+        ss.str("");
+        ss << "// Atomic operation: " << op;
+        writeLine(ss.str());
+
+        if (op == "load") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name) << ".Load()";
+            writeLine(ss.str());
+        } else if (op == "store") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name) << ".Store(value)";
+            writeLine(ss.str());
+        } else if (op == "fetch_add") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name) << ".Add(1)";
+            writeLine(ss.str());
+        } else if (op == "fetch_sub") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name) << ".Add(-1)";
+            writeLine(ss.str());
+        } else if (op == "exchange") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name) << ".Swap(newValue)";
+            writeLine(ss.str());
+        } else if (op == "compare_exchange_weak" || op == "compare_exchange_strong") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name)
+               << ".CompareAndSwap(old, new)";
+            writeLine(ss.str());
+        }
+    }
+}
+
+void GoCodeGenerator::generateConditionVariable(const ConditionVariableInfo& cv) {
+    std::stringstream ss;
+
+    writeLine("// Condition variable: " + cv.cv_var_name);
+
+    if (!cv.associated_mutex.empty()) {
+        ss << sanitizeName(cv.cv_var_name) << " := sync.NewCond(&"
+           << sanitizeName(cv.associated_mutex) << ")";
+        writeLine(ss.str());
+    } else {
+        writeLine("// Note: Condition variable requires associated mutex");
+        ss << "var mutex sync.Mutex";
+        writeLine(ss.str());
+        ss.str("");
+        ss << sanitizeName(cv.cv_var_name) << " := sync.NewCond(&mutex)";
+        writeLine(ss.str());
+    }
+
+    // Generate wait/signal operations
+    for (const auto& op : cv.wait_conditions) {
+        ss.str("");
+        ss << "// Condition variable operation: " << op;
+        writeLine(ss.str());
+
+        if (op == "wait") {
+            writeLine(sanitizeName(cv.cv_var_name) + ".Wait()");
+        } else if (op == "notify_one") {
+            writeLine(sanitizeName(cv.cv_var_name) + ".Signal()");
+        } else if (op == "notify_all") {
+            writeLine(sanitizeName(cv.cv_var_name) + ".Broadcast()");
+        } else if (op == "wait_for" || op == "wait_until") {
+            writeLine("// " + op + " - Go doesn't have timed wait on Cond");
+            writeLine("// Use channels or time.After for timeout behavior");
+        }
+    }
 }
 
 } // namespace hybrid

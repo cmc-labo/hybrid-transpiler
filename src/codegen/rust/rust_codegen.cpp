@@ -157,8 +157,12 @@ void RustCodeGenerator::generateFunction(const Function& func) {
     writeLine(sig.str() + " {");
     indent();
 
+    // Function body with threading conversion
+    if (func.uses_threading) {
+        generateThreadingCode(func);
+    }
     // Function body with exception handling conversion
-    if (!func.try_catch_blocks.empty()) {
+    else if (!func.try_catch_blocks.empty()) {
         // Convert try-catch blocks to Result pattern
         generateTryCatchAsResult(func);
     } else if (!func.body.empty()) {
@@ -365,6 +369,50 @@ std::string RustCodeGenerator::convertType(const std::shared_ptr<Type>& type) {
             }
             return "Option<()>";
 
+        // Threading types
+        case TypeKind::StdThread:
+            return "std::thread::JoinHandle<()>";
+
+        case TypeKind::StdMutex:
+            if (!type->template_args.empty()) {
+                return "std::sync::Mutex<" + convertType(type->template_args[0]) + ">";
+            }
+            return "std::sync::Mutex<()>";
+
+        case TypeKind::StdRecursiveMutex:
+            if (!type->template_args.empty()) {
+                return "parking_lot::ReentrantMutex<" + convertType(type->template_args[0]) + ">";
+            }
+            return "parking_lot::ReentrantMutex<()>";
+
+        case TypeKind::StdSharedMutex:
+            if (!type->template_args.empty()) {
+                return "std::sync::RwLock<" + convertType(type->template_args[0]) + ">";
+            }
+            return "std::sync::RwLock<()>";
+
+        case TypeKind::StdConditionVariable:
+            return "std::sync::Condvar";
+
+        case TypeKind::StdAtomic:
+            if (!type->template_args.empty()) {
+                std::string inner_type = type->template_args[0]->name;
+                if (inner_type == "int" || inner_type == "int32_t") return "std::sync::atomic::AtomicI32";
+                if (inner_type == "long" || inner_type == "int64_t") return "std::sync::atomic::AtomicI64";
+                if (inner_type == "unsigned int" || inner_type == "uint32_t") return "std::sync::atomic::AtomicU32";
+                if (inner_type == "unsigned long" || inner_type == "uint64_t") return "std::sync::atomic::AtomicU64";
+                if (inner_type == "bool") return "std::sync::atomic::AtomicBool";
+                if (inner_type == "size_t") return "std::sync::atomic::AtomicUsize";
+            }
+            return "std::sync::atomic::AtomicUsize";
+
+        case TypeKind::StdLockGuard:
+        case TypeKind::StdUniqueLock:
+            return "std::sync::MutexGuard";
+
+        case TypeKind::StdSharedLock:
+            return "std::sync::RwLockReadGuard";
+
         case TypeKind::Struct:
         case TypeKind::Class:
             return sanitizeName(type->name);
@@ -489,6 +537,223 @@ std::string RustCodeGenerator::convertTemplateArgsToRust(const std::vector<Templ
 
     ss << ">";
     return ss.str();
+}
+
+void RustCodeGenerator::generateThreadingCode(const Function& func) {
+    writeLine("// Threading code converted from C++");
+    writeLine("");
+
+    // Generate thread creation
+    for (const auto& thread : func.threads_created) {
+        generateThreadCreation(thread);
+        writeLine("");
+    }
+
+    // Generate lock scopes
+    for (const auto& lock : func.lock_scopes) {
+        generateLockScope(lock);
+        writeLine("");
+    }
+
+    // Generate atomic operations
+    for (const auto& atomic : func.atomic_operations) {
+        generateAtomicOperations(atomic);
+        writeLine("");
+    }
+
+    // Generate condition variable operations
+    for (const auto& cv : func.condition_variables) {
+        generateConditionVariable(cv);
+        writeLine("");
+    }
+
+    // Generate original function body
+    if (!func.body.empty()) {
+        writeLine("// Original function body:");
+        writeLine(func.body);
+    }
+
+    // Join threads if they are joinable
+    for (const auto& thread : func.threads_created) {
+        if (thread.joinable && !thread.detached) {
+            writeLine("");
+            writeLine("// Wait for thread to complete");
+            writeLine(thread.thread_var_name + ".join().unwrap();");
+        }
+    }
+}
+
+void RustCodeGenerator::generateThreadCreation(const ThreadInfo& thread) {
+    std::stringstream ss;
+
+    writeLine("// Thread: " + thread.thread_var_name);
+
+    // Generate thread spawn
+    ss << "let " << sanitizeName(thread.thread_var_name)
+       << " = std::thread::spawn(move || {";
+
+    writeLine(ss.str());
+    indent();
+
+    // Call the thread function with arguments
+    ss.str("");
+    ss << sanitizeName(thread.function_name) << "(";
+
+    for (size_t i = 0; i < thread.arguments.size(); ++i) {
+        ss << thread.arguments[i];
+        if (i < thread.arguments.size() - 1) {
+            ss << ", ";
+        }
+    }
+
+    ss << ");";
+    writeLine(ss.str());
+
+    dedent();
+    writeLine("});");
+
+    if (thread.detached) {
+        writeLine("// Note: Original thread was detached, but Rust threads are always joinable");
+        writeLine("// Consider using std::mem::forget() if you want to detach");
+    }
+}
+
+void RustCodeGenerator::generateLockScope(const LockInfo& lock) {
+    std::stringstream ss;
+
+    switch (lock.type) {
+        case LockInfo::LockGuard:
+            writeLine("// Lock guard (RAII lock)");
+            ss << "let _" << sanitizeName(lock.lock_var_name)
+               << " = " << sanitizeName(lock.mutex_name) << ".lock().unwrap();";
+            writeLine(ss.str());
+            break;
+
+        case LockInfo::UniqueLock:
+            writeLine("// Unique lock (RAII lock)");
+            ss << "let mut " << sanitizeName(lock.lock_var_name)
+               << " = " << sanitizeName(lock.mutex_name) << ".lock().unwrap();";
+            writeLine(ss.str());
+            break;
+
+        case LockInfo::SharedLock:
+            writeLine("// Shared lock (read lock)");
+            ss << "let " << sanitizeName(lock.lock_var_name)
+               << " = " << sanitizeName(lock.mutex_name) << ".read().unwrap();";
+            writeLine(ss.str());
+            break;
+
+        default:
+            writeLine("// Unknown lock type");
+            break;
+    }
+
+    // Generate lock scope body if present
+    if (!lock.scope_body.empty()) {
+        writeLine("{");
+        indent();
+        writeLine(lock.scope_body);
+        dedent();
+        writeLine("}");
+        writeLine("// Lock automatically released here (RAII)");
+    }
+}
+
+void RustCodeGenerator::generateAtomicOperations(const AtomicInfo& atomic) {
+    std::stringstream ss;
+
+    writeLine("// Atomic variable: " + atomic.atomic_var_name);
+
+    // Generate atomic variable if we have type info
+    if (atomic.value_type) {
+        std::string atomic_type;
+        if (atomic.value_type->name == "int" || atomic.value_type->name == "int32_t") {
+            atomic_type = "AtomicI32";
+        } else if (atomic.value_type->name == "long" || atomic.value_type->name == "int64_t") {
+            atomic_type = "AtomicI64";
+        } else if (atomic.value_type->name == "bool") {
+            atomic_type = "AtomicBool";
+        } else {
+            atomic_type = "AtomicUsize";
+        }
+
+        ss << "let " << sanitizeName(atomic.atomic_var_name)
+           << " = std::sync::atomic::" << atomic_type << "::new(0);";
+        writeLine(ss.str());
+    }
+
+    // Generate atomic operations
+    for (const auto& op : atomic.operations) {
+        ss.str("");
+        ss << "// Atomic operation: " << op;
+        writeLine(ss.str());
+
+        if (op == "load") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name)
+               << ".load(std::sync::atomic::Ordering::SeqCst);";
+            writeLine(ss.str());
+        } else if (op == "store") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name)
+               << ".store(value, std::sync::atomic::Ordering::SeqCst);";
+            writeLine(ss.str());
+        } else if (op == "fetch_add") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name)
+               << ".fetch_add(1, std::sync::atomic::Ordering::SeqCst);";
+            writeLine(ss.str());
+        } else if (op == "fetch_sub") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name)
+               << ".fetch_sub(1, std::sync::atomic::Ordering::SeqCst);";
+            writeLine(ss.str());
+        } else if (op == "exchange") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name)
+               << ".swap(new_value, std::sync::atomic::Ordering::SeqCst);";
+            writeLine(ss.str());
+        } else if (op == "compare_exchange_weak" || op == "compare_exchange_strong") {
+            ss.str("");
+            ss << sanitizeName(atomic.atomic_var_name)
+               << ".compare_exchange(current, new_value, "
+               << "std::sync::atomic::Ordering::SeqCst, "
+               << "std::sync::atomic::Ordering::SeqCst);";
+            writeLine(ss.str());
+        }
+    }
+}
+
+void RustCodeGenerator::generateConditionVariable(const ConditionVariableInfo& cv) {
+    std::stringstream ss;
+
+    writeLine("// Condition variable: " + cv.cv_var_name);
+    ss << "let " << sanitizeName(cv.cv_var_name) << " = std::sync::Condvar::new();";
+    writeLine(ss.str());
+
+    if (!cv.associated_mutex.empty()) {
+        writeLine("// Associated with mutex: " + cv.associated_mutex);
+    }
+
+    // Generate wait/notify operations
+    for (const auto& op : cv.wait_conditions) {
+        ss.str("");
+        ss << "// Condition variable operation: " << op;
+        writeLine(ss.str());
+
+        if (op == "wait") {
+            writeLine("let _guard = " + sanitizeName(cv.cv_var_name) +
+                     ".wait(guard).unwrap();");
+        } else if (op == "notify_one") {
+            writeLine(sanitizeName(cv.cv_var_name) + ".notify_one();");
+        } else if (op == "notify_all") {
+            writeLine(sanitizeName(cv.cv_var_name) + ".notify_all();");
+        } else if (op == "wait_for" || op == "wait_until") {
+            writeLine("// " + op + " - use wait_timeout in Rust");
+            writeLine("let (_guard, _timeout) = " + sanitizeName(cv.cv_var_name) +
+                     ".wait_timeout(guard, Duration::from_secs(1)).unwrap();");
+        }
+    }
 }
 
 } // namespace hybrid

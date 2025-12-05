@@ -260,6 +260,109 @@ func (this *FileReader) ReadFile(path string) (string, error) {
 }
 ```
 
+### Example 4: Multithreading
+
+**Input (C++):**
+```cpp
+class ThreadSafeCounter {
+private:
+    int count;
+    std::mutex mutex;
+
+public:
+    ThreadSafeCounter() : count(0) {}
+
+    void increment() {
+        std::lock_guard<std::mutex> lock(mutex);
+        ++count;
+    }
+
+    void runParallel() {
+        std::thread t1(&ThreadSafeCounter::increment, this);
+        std::thread t2(&ThreadSafeCounter::increment, this);
+
+        t1.join();
+        t2.join();
+    }
+};
+```
+
+**Output (Rust):**
+```rust
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+pub struct ThreadSafeCounter {
+    count: Mutex<i32>,
+}
+
+impl ThreadSafeCounter {
+    pub fn new() -> Self {
+        Self {
+            count: Mutex::new(0),
+        }
+    }
+
+    pub fn increment(&self) {
+        let mut count = self.count.lock().unwrap();
+        *count += 1;
+    }
+
+    pub fn run_parallel(self: Arc<Self>) {
+        let counter1 = Arc::clone(&self);
+        let t1 = thread::spawn(move || {
+            counter1.increment();
+        });
+
+        let counter2 = Arc::clone(&self);
+        let t2 = thread::spawn(move || {
+            counter2.increment();
+        });
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+    }
+}
+```
+
+**Output (Go):**
+```go
+import "sync"
+
+type ThreadSafeCounter struct {
+    Count int32
+    Mutex sync.Mutex
+}
+
+func NewThreadSafeCounter() *ThreadSafeCounter {
+    return &ThreadSafeCounter{Count: 0}
+}
+
+func (this *ThreadSafeCounter) Increment() {
+    this.Mutex.Lock()
+    defer this.Mutex.Unlock()
+    this.Count++
+}
+
+func (this *ThreadSafeCounter) RunParallel() {
+    var wg sync.WaitGroup
+
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        this.Increment()
+    }()
+
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        this.Increment()
+    }()
+
+    wg.Wait()
+}
+```
+
 ## Feature Support Matrix
 
 | C++ Feature | Rust | Go | Status |
@@ -271,6 +374,7 @@ func (this *FileReader) ReadFile(path string) (string, error) {
 | **Exceptions** | **Result/panic** | **error values** | **✅ Supported** |
 | RAII | Drop trait | defer | ✅ Supported |
 | **STL Containers** | **std::collections** | **slices/maps** | **✅ Supported** |
+| **Multithreading** | **std::thread/Arc<Mutex>** | **goroutines/sync** | **✅ Supported** |
 | Operator Overload | Traits | N/A | ⚠️ Partial |
 | Multiple Inheritance | Trait composition | N/A | ⚠️ Partial |
 | Virtual Functions | dyn Trait | Interfaces | ✅ Supported |
@@ -302,6 +406,25 @@ func (this *FileReader) ReadFile(path string) (string, error) {
 | Multiple catch clauses | Pattern matching on error type | Type assertion in defer | Type-specific handling |
 | RAII + exceptions | `Drop` trait (automatic) | `defer` statement | Cleanup guaranteed |
 
+### Multithreading Conversion
+
+| C++ Threading Feature | Rust Conversion | Go Conversion | Notes |
+|-----------------------|-----------------|---------------|-------|
+| `std::thread` | `std::thread::spawn` | `go func()` (goroutine) | Threads → native threads/goroutines |
+| `thread.join()` | `handle.join().unwrap()` | `sync.WaitGroup` | Wait for thread completion |
+| `thread.detach()` | `std::mem::forget(handle)` | goroutine (default) | Detached execution |
+| `std::mutex` | `std::sync::Mutex<T>` | `sync.Mutex` | Mutual exclusion |
+| `std::shared_ptr + mutex` | `Arc<Mutex<T>>` | N/A | Shared ownership + thread safety |
+| `std::lock_guard` | `MutexGuard` (RAII) | `defer mutex.Unlock()` | Scoped locking |
+| `std::unique_lock` | `MutexGuard` | `defer mutex.Unlock()` | Flexible locking |
+| `std::shared_mutex` | `std::sync::RwLock<T>` | `sync.RWMutex` | Reader-writer lock |
+| `std::shared_lock` | `RwLockReadGuard` | `defer rwmutex.RUnlock()` | Read lock |
+| `std::atomic<T>` | `std::sync::atomic::Atomic*` | `sync/atomic.*` | Lock-free operations |
+| `std::condition_variable` | `std::sync::Condvar` | `sync.Cond` | Thread synchronization |
+| `cv.wait()` | `condvar.wait(guard)` | `cond.Wait()` | Wait on condition |
+| `cv.notify_one()` | `condvar.notify_one()` | `cond.Signal()` | Wake one thread |
+| `cv.notify_all()` | `condvar.notify_all()` | `cond.Broadcast()` | Wake all threads |
+
 ### Template/Generic Conversion
 
 | C++ Template Feature | Rust Generic | Go Generic | Notes |
@@ -326,21 +449,23 @@ hybrid-transpiler/
 │   │   ├── type_resolver.cpp
 │   │   ├── stl_container_mapper.cpp        # STL detection
 │   │   ├── exception_analyzer.cpp          # Exception analysis
-│   │   └── template_analyzer.cpp           # NEW: Template analysis
+│   │   ├── template_analyzer.cpp           # Template analysis
+│   │   └── thread_analyzer.cpp             # NEW: Threading analysis
 │   ├── ir/               # Intermediate representation
 │   │   ├── ir_builder.cpp
 │   │   ├── type_system.cpp
 │   │   └── ownership_analyzer.cpp
 │   ├── codegen/
 │   │   ├── rust/         # Rust code generator
-│   │   │   ├── rust_codegen.cpp            # Updated: Generics support
+│   │   │   ├── rust_codegen.cpp            # Updated: Threading support
 │   │   │   └── rust_formatter.cpp
 │   │   └── go/           # Go code generator
-│   │       ├── go_codegen.cpp              # Updated: Generics support
+│   │       ├── go_codegen.cpp              # Updated: Goroutine support
 │   │       └── go_formatter.cpp
 │   └── main.cpp
 ├── include/              # Public headers
-│   └── ir.h              # Updated: Template parameters added
+│   ├── ir.h              # Updated: Threading types added
+│   └── codegen.h         # Updated: Threading methods added
 ├── tests/                # Test cases
 ├── examples/             # Example transformations
 │   ├── stl_containers.cpp
@@ -349,8 +474,11 @@ hybrid-transpiler/
 │   ├── exception_handling.cpp
 │   ├── exception_handling_expected.rs
 │   ├── exception_handling_expected.go
-│   ├── templates.cpp                       # NEW: Template examples
-│   └── templates_expected.rs               # NEW: Expected Rust output
+│   ├── templates.cpp
+│   ├── templates_expected.rs
+│   ├── multithreading.cpp                  # NEW: Threading examples
+│   ├── multithreading_expected.rs          # NEW: Expected Rust output
+│   └── multithreading_expected.go          # NEW: Expected Go output
 ├── docs/                 # Documentation
 ├── CMakeLists.txt
 └── README.md
@@ -409,12 +537,13 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
 ### v0.2 (Current)
 - [x] **Exception to Result/error conversion** - ✅ Implemented!
 - [x] **Full template support** - ✅ Implemented!
+- [x] **Multi-threaded code conversion** - ✅ Implemented!
 - [ ] Advanced ownership analysis
 
 ### v0.3 (Planned)
-- [ ] Multi-threaded code conversion
 - [ ] Async/await transformation
 - [ ] FFI generation support
+- [ ] Advanced data race detection
 
 ### v1.0 (Future)
 - [ ] Production-quality full support

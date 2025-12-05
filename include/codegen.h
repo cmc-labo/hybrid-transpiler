@@ -42,6 +42,18 @@ private:
     void generateClass(const ClassDecl& class_decl);
     void generateFunction(const Function& func);
     void generateVariable(const Variable& var);
+    void generateTryCatchAsResult(const Function& func);
+
+    // Threading code generation
+    void generateThreadingCode(const Function& func);
+    void generateThreadCreation(const ThreadInfo& thread);
+    void generateLockScope(const LockInfo& lock);
+    void generateAtomicOperations(const AtomicInfo& atomic);
+    void generateConditionVariable(const ConditionVariableInfo& cv);
+
+    // Template code generation
+    std::string convertTemplateParametersToRust(const std::vector<TemplateParameter>& params);
+    std::string convertTemplateArgsToRust(const std::vector<TemplateParameter>& params);
 
     std::string convertType(const std::shared_ptr<Type>& type);
     std::string convertSmartPointer(const std::shared_ptr<Type>& type);
@@ -59,6 +71,14 @@ private:
     void generateClass(const ClassDecl& class_decl);
     void generateFunction(const Function& func, const std::string& receiver_type = "");
     void generateVariable(const Variable& var);
+    void generateTryCatchAsError(const Function& func);
+
+    // Threading code generation
+    void generateThreadingCode(const Function& func);
+    void generateGoroutineCreation(const ThreadInfo& thread);
+    void generateMutexLock(const LockInfo& lock);
+    void generateAtomicOperations(const AtomicInfo& atomic);
+    void generateConditionVariable(const ConditionVariableInfo& cv);
 
     std::string convertType(const std::shared_ptr<Type>& type);
     std::string sanitizeName(const std::string& name);
