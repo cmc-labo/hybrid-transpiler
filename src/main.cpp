@@ -27,6 +27,8 @@ void printUsage(const char* program_name) {
     std::cout << "  --no-safety-checks      Disable safety checks\n";
     std::cout << "  --no-comments           Don't preserve comments\n";
     std::cout << "  --gen-tests             Generate test cases\n";
+    std::cout << "  --verbose               Enable verbose output\n";
+    std::cout << "  --quiet                 Minimal output (errors only)\n";
     std::cout << "  -h, --help              Show this help message\n";
     std::cout << "  -v, --version           Show version information\n\n";
 
@@ -38,6 +40,10 @@ void printUsage(const char* program_name) {
     std::cout << "  # Auto-generate output filename\n";
     std::cout << "  " << program_name << " -i point.cpp -t rust\n";
     std::cout << "  # Output: point.rs\n\n";
+    std::cout << "  # Verbose mode (detailed output)\n";
+    std::cout << "  " << program_name << " -i example.cpp --verbose\n\n";
+    std::cout << "  # Quiet mode (errors only)\n";
+    std::cout << "  " << program_name << " -i example.cpp --quiet\n\n";
     std::cout << "  # Generate with test cases\n";
     std::cout << "  " << program_name << " -i vector.cpp --gen-tests\n\n";
 
@@ -158,6 +164,10 @@ int main(int argc, char* argv[]) {
             options.preserve_comments = false;
         } else if (arg == "--gen-tests") {
             options.generate_tests = true;
+        } else if (arg == "--verbose") {
+            options.verbose = true;
+        } else if (arg == "--quiet") {
+            options.quiet = true;
         } else {
             std::cerr << "Error: Unknown option '" << arg << "'\n";
 
@@ -204,12 +214,30 @@ int main(int argc, char* argv[]) {
         } else {
             options.output_path = input_file + extension;
         }
+
+        if (options.verbose) {
+            std::cout << "Auto-generated output path: " << options.output_path << "\n";
+        }
+    }
+
+    // Display verbose information
+    if (options.verbose) {
+        std::cout << "Configuration:\n";
+        std::cout << "  Input:  " << input_file << "\n";
+        std::cout << "  Output: " << options.output_path << "\n";
+        std::cout << "  Target: " << (options.target == hybrid::TargetLanguage::Rust ? "Rust" : "Go") << "\n";
+        std::cout << "  Optimization level: " << options.optimization_level << "\n";
+        std::cout << "  Safety checks: " << (options.enable_safety_checks ? "enabled" : "disabled") << "\n";
+        std::cout << "  Preserve comments: " << (options.preserve_comments ? "yes" : "no") << "\n";
+        std::cout << "  Generate tests: " << (options.generate_tests ? "yes" : "no") << "\n";
     }
 
     // Create transpiler and run
-    std::cout << "Transpiling " << input_file << " to "
-              << (options.target == hybrid::TargetLanguage::Rust ? "Rust" : "Go")
-              << "...\n";
+    if (!options.quiet) {
+        std::cout << "Transpiling " << input_file << " to "
+                  << (options.target == hybrid::TargetLanguage::Rust ? "Rust" : "Go")
+                  << "...\n";
+    }
 
     hybrid::Transpiler transpiler(options);
 
@@ -219,7 +247,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "Successfully transpiled to: " << options.output_path << "\n";
+    if (!options.quiet) {
+        std::cout << "Successfully transpiled to: " << options.output_path << "\n";
+    }
 
     return 0;
 }

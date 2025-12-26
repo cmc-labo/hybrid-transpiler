@@ -28,6 +28,8 @@ struct TranspilerOptions {
     bool enable_safety_checks = true;
     bool preserve_comments = true;
     bool generate_tests = false;
+    bool verbose = false;           // Verbose output
+    bool quiet = false;             // Minimal output
     std::string output_path;
 };
 
